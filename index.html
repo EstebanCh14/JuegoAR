@@ -257,6 +257,19 @@
       animation: lowBlink 0.35s infinite alternate;
     }
 
+    @keyframes screenShake {
+      0%   { transform: translate(0, 0); }
+      20%  { transform: translate(-5px, 3px); }
+      40%  { transform: translate(5px, -4px); }
+      60%  { transform: translate(-4px, 5px); }
+      80%  { transform: translate(4px, -2px); }
+      100% { transform: translate(0, 0); }
+    }
+
+    .shaking {
+      animation: screenShake 0.28s ease-out;
+    }
+
     @keyframes lowBlink {
       from {
         opacity: 1;
@@ -496,6 +509,62 @@
       white-space: nowrap;
     }
 
+    #powerupModal {
+      display: none;
+    }
+
+    .powerup-title {
+      margin: 0 0 14px;
+      font-family: "VT323", monospace;
+      font-size: clamp(32px, 8vw, 60px);
+      color: var(--yellow);
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px rgba(255,234,0,0.8);
+    }
+
+    .powerup-cards {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .powerup-card {
+      flex: 1;
+      min-width: 120px;
+      border: 1px solid rgba(0,240,255,0.6);
+      background: rgba(0,240,255,0.06);
+      padding: 10px 8px;
+      cursor: pointer;
+      pointer-events: auto;
+      text-align: center;
+      transition: background 0.12s;
+    }
+
+    .powerup-card:hover,
+    .powerup-card:active {
+      background: rgba(0,240,255,0.18);
+    }
+
+    .powerup-card .pu-icon {
+      font-size: 28px;
+      font-family: "VT323", monospace;
+      color: var(--yellow);
+    }
+
+    .powerup-card .pu-name {
+      font-size: 13px;
+      letter-spacing: 1px;
+      color: var(--cyan);
+      margin-top: 4px;
+    }
+
+    .powerup-card .pu-desc {
+      font-size: 11px;
+      opacity: 0.75;
+      margin-top: 4px;
+      color: rgba(0,240,255,0.85);
+    }
+
     #gameOver {
       display: none;
     }
@@ -583,6 +652,14 @@
     </div>
 
     <div id="waveBanner">WAVE 01</div>
+    <div id="comboBanner" style="
+      position:absolute; left:50%; top:calc(32% + var(--safe-top));
+      transform:translateX(-50%); font-family:'VT323',monospace;
+      font-size:clamp(28px,7vw,52px); letter-spacing:3px; opacity:0;
+      color:#ffea00; text-shadow:0 0 10px rgba(255,234,0,0.9);
+      pointer-events:none; white-space:nowrap;
+      transition:opacity 0.18s linear;
+    "></div>
 
     <div class="core-panel">
       <div class="core-label">CORE INTEGRITY</div>
@@ -598,6 +675,14 @@
     </div>
 
     <div id="placementHint">APUNTA AL SUELO Y TOCA PARA COLOCAR EL NUCLEO</div>
+    <button id="pauseBtn" aria-label="Pause" style="
+      display:none; position:absolute; top:calc(14px + var(--safe-top));
+      left:50%; transform:translateX(-50%);
+      pointer-events:auto; border:1px solid rgba(0,240,255,0.7);
+      background:rgba(0,0,0,0.55); color:var(--cyan);
+      font-family:'VT323',monospace; font-size:22px;
+      padding:4px 18px; letter-spacing:2px; cursor:pointer;
+    ">&#9646;&#9646; PAUSE</button>
     <div id="hitFlash"></div>
     <div id="damageFlash"></div>
   </div>
@@ -618,10 +703,18 @@
     </div>
   </div>
 
+  <div id="powerupModal" class="screen-center">
+    <div class="panel">
+      <div class="powerup-title">UPGRADE</div>
+      <div id="powerupCards" class="powerup-cards"></div>
+    </div>
+  </div>
+
   <div id="gameOver" class="screen-center">
     <div class="panel">
       <h2 class="gameover-title">SYSTEM FAILURE</h2>
       <div class="stats">SCORE<span id="goScore">0000</span></div>
+      <div class="stats">BEST<span id="goBest">0000</span></div>
       <div class="stats">WAVES<span id="goWaves">00</span></div>
       <div class="stats">KILLS<span id="goKills">000</span></div>
       <button id="restartBtn" class="btn">RESTART</button>
@@ -667,6 +760,17 @@
         score: 50,
         scale: 0.26,
         halo: 0.3
+      },
+      boss: {
+        id: "boss",
+        color: "#ff6600",
+        primitive: "box",
+        hp: 12,
+        speed: 0.16,
+        damage: 35,
+        score: 300,
+        scale: 0.52,
+        halo: 0.64
       }
     };
 
@@ -696,9 +800,13 @@
       waveDelayTimer: 0,
       enemies: [],
       effects: [],
+      combo: 0,
+      comboTimer: 0,
+      comboTimeLimit: 2.2,
       raycaster: new THREE.Raycaster(),
       pointerNDC: new THREE.Vector2(0, 0),
-      startedAt: performance.now()
+      startedAt: performance.now(),
+      shootCooldown: 220
     };
 
     const refs = {
@@ -706,6 +814,7 @@
       scene: document.getElementById("arScene"),
       camEl: document.getElementById("userCamera"),
       worldRoot: document.getElementById("worldRoot"),
+      hud: document.getElementById("hud"),
       startModal: document.getElementById("startModal"),
       startBtn: document.getElementById("startBtn"),
       motionBtn: document.getElementById("motionBtn"),
@@ -715,13 +824,18 @@
       waveBanner: document.getElementById("waveBanner"),
       coreBar: document.getElementById("coreBar"),
       coreValue: document.getElementById("coreValue"),
+      comboBanner: document.getElementById("comboBanner"),
       hitFlash: document.getElementById("hitFlash"),
       damageFlash: document.getElementById("damageFlash"),
       gameOver: document.getElementById("gameOver"),
       goScore: document.getElementById("goScore"),
+      goBest: document.getElementById("goBest"),
       goWaves: document.getElementById("goWaves"),
       goKills: document.getElementById("goKills"),
-      restartBtn: document.getElementById("restartBtn")
+      restartBtn: document.getElementById("restartBtn"),
+      pauseBtn: document.getElementById("pauseBtn"),
+      powerupModal: document.getElementById("powerupModal"),
+      powerupCards: document.getElementById("powerupCards")
     };
 
     const runtime = {
@@ -730,6 +844,7 @@
       coreHalo: null,
       coreLight: null,
       lastTouchTs: 0,
+      lastShootTs: 0,
       audio: {
         ctx: null,
         master: null
@@ -843,6 +958,7 @@
 
     function sfxShoot() {
       playTone("square", 880, 480, 0.06, 0.18);
+      if (navigator.vibrate) navigator.vibrate(18);
     }
 
     function sfxHit() {
@@ -861,6 +977,7 @@
     function sfxCoreHit() {
       playTone("sawtooth", 80, 60, 0.11, 0.25, 0);
       playNoise(0.09, 0.15, 0, 900);
+      if (navigator.vibrate) navigator.vibrate([60, 20, 60]);
     }
 
     function sfxGameOver() {
@@ -1123,11 +1240,35 @@
 
       refs.worldRoot.appendChild(enemy);
 
+      let hpBarFill = null;
+      if (type.hp > 1) {
+        const hpBarRoot = document.createElement("a-entity");
+        hpBarRoot.setAttribute("position", `0 ${type.scale * 2 + 0.12} 0`);
+        hpBarRoot.setAttribute("billboard", "");
+
+        const hpBg = document.createElement("a-plane");
+        hpBg.setAttribute("width", "0.28");
+        hpBg.setAttribute("height", "0.04");
+        hpBg.setAttribute("material", "color:#111; opacity:0.7; transparent:true; shader:flat");
+        hpBarRoot.appendChild(hpBg);
+
+        hpBarFill = document.createElement("a-plane");
+        hpBarFill.setAttribute("width", "0.26");
+        hpBarFill.setAttribute("height", "0.026");
+        hpBarFill.setAttribute("position", "0 0 0.001");
+        hpBarFill.setAttribute("material", `color:${type.color}; emissive:${type.color}; emissiveIntensity:0.8; shader:flat`);
+        hpBarRoot.appendChild(hpBarFill);
+
+        enemy.appendChild(hpBarRoot);
+      }
+
       const enemyObj = {
         el: enemy,
         bodyEl: body,
+        hpBarFill,
         type,
         hp: type.hp,
+        maxHp: type.hp,
         rotSpeed: rand(65, 140),
         bobSeed: Math.random() * Math.PI * 2,
         bornAt: performance.now(),
@@ -1145,6 +1286,11 @@
       enemyObj.hp -= amount;
       oneShotOpacity(refs.hitFlash, 0.9, 35, 100);
       sfxHit();
+      if (enemyObj.hpBarFill) {
+        const pct = Math.max(0, enemyObj.hp / enemyObj.maxHp);
+        enemyObj.hpBarFill.setAttribute("width", String(0.26 * pct));
+        enemyObj.hpBarFill.setAttribute("position", `${(pct - 1) * 0.13} 0 0.001`);
+      }
       if (enemyObj.hp <= 0) {
         killEnemy(enemyObj);
       }
@@ -1157,9 +1303,18 @@
       enemyObj.dead = true;
       const p = enemyObj.el.object3D.position.clone();
       createExplosion(p, enemyObj.type.color);
-      state.score += enemyObj.type.score;
+
+      state.combo += 1;
+      state.comboTimer = state.comboTimeLimit;
+      const multiplier = state.combo >= 5 ? 4 : state.combo >= 3 ? 2 : 1;
+      state.score += enemyObj.type.score * multiplier;
       state.kills += 1;
       sfxKill();
+
+      if (state.combo >= 2) {
+        refs.comboBanner.textContent = `x${multiplier} COMBO ${state.combo}!`;
+        refs.comboBanner.style.opacity = "1";
+      }
       enemyObj.el.remove();
 
       const idx = state.enemies.indexOf(enemyObj);
@@ -1181,8 +1336,15 @@
       }
 
       state.coreHp = Math.max(0, state.coreHp - enemyObj.type.damage);
+      state.combo = 0;
+      state.comboTimer = 0;
+      refs.comboBanner.style.opacity = "0";
       sfxCoreHit();
       oneShotOpacity(refs.damageFlash, 0.75, 60, 180);
+      refs.hud.classList.remove("shaking");
+      void refs.hud.offsetWidth;
+      refs.hud.classList.add("shaking");
+      refs.hud.addEventListener("animationend", () => refs.hud.classList.remove("shaking"), { once: true });
       updateHUD();
       if (state.coreHp <= 0) {
         triggerGameOver();
@@ -1192,6 +1354,21 @@
     // =========================
     // Efectos visuales (tracer y particulas)
     // =========================
+    const particlePool = [];
+    const POOL_SIZE = 64;
+
+    function getParticle() {
+      if (particlePool.length > 0) return particlePool.pop();
+      const p = document.createElement("a-sphere");
+      p.setAttribute("radius", "0.03");
+      return p;
+    }
+
+    function releaseParticle(p) {
+      p.removeAttribute("visible");
+      particlePool.push(p);
+    }
+
     function createTracer(start, end) {
       const tracer = document.createElement("a-entity");
       tracer.setAttribute("line", `start: ${start.x} ${start.y} ${start.z}; end: ${end.x} ${end.y} ${end.z}; color: #00f0ff; opacity: 0.95`);
@@ -1201,10 +1378,10 @@
 
     function createExplosion(pos, color) {
       for (let i = 0; i < 8; i += 1) {
-        const part = document.createElement("a-sphere");
-        part.setAttribute("radius", "0.03");
+        const part = getParticle();
         part.setAttribute("material", `color: ${color}; emissive: ${color}; emissiveIntensity: 1.1; transparent: true; opacity: 0.95`);
         part.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+        part.setAttribute("visible", "true");
         refs.worldRoot.appendChild(part);
 
         const v = new THREE.Vector3(rand(-1, 1), rand(0.1, 1.1), rand(-1, 1)).normalize().multiplyScalar(rand(1.2, 2.8));
@@ -1231,10 +1408,95 @@
           fx.el.object3D.children[0].material.opacity = Math.max(0, k);
         }
         if (fx.life >= fx.maxLife) {
-          fx.el.remove();
+          if (particlePool.length < POOL_SIZE) {
+            releaseParticle(fx.el);
+          } else {
+            fx.el.remove();
+          }
           state.effects.splice(i, 1);
         }
       }
+    }
+
+    // =========================
+    // Power-ups
+    // =========================
+    const POWERUPS = [
+      {
+        id: "heal",
+        icon: "+",
+        name: "REPAIR CORE",
+        desc: "+30 integrity",
+        apply() {
+          state.coreHp = Math.min(state.coreMaxHp, state.coreHp + 30);
+          updateHUD();
+        }
+      },
+      {
+        id: "rapid",
+        icon: ">>",
+        name: "RAPID FIRE",
+        desc: "Cooldown -40ms",
+        apply() {
+          state.shootCooldown = Math.max(60, state.shootCooldown - 40);
+        }
+      },
+      {
+        id: "combo",
+        icon: "x",
+        name: "COMBO BOOST",
+        desc: "Combo timer +1s",
+        apply() {
+          state.comboTimeLimit += 1.0;
+        }
+      },
+      {
+        id: "shield",
+        icon: "[]",
+        name: "SHIELD BOOST",
+        desc: "+20 max integrity",
+        apply() {
+          state.coreMaxHp += 20;
+          state.coreHp = Math.min(state.coreMaxHp, state.coreHp + 20);
+          updateHUD();
+        }
+      }
+    ];
+
+    function showPowerupScreen() {
+      state.phase = "powerup";
+      refs.pauseBtn.style.display = "none";
+
+      const pool = [...POWERUPS];
+      const chosen = [];
+      while (chosen.length < 3 && pool.length > 0) {
+        const idx = Math.floor(Math.random() * pool.length);
+        chosen.push(pool.splice(idx, 1)[0]);
+      }
+
+      refs.powerupCards.innerHTML = "";
+      chosen.forEach((pu) => {
+        const card = document.createElement("div");
+        card.className = "powerup-card";
+        card.innerHTML = `
+          <div class="pu-icon">${pu.icon}</div>
+          <div class="pu-name">${pu.name}</div>
+          <div class="pu-desc">${pu.desc}</div>
+        `;
+        const pick = (ev) => {
+          ev.preventDefault();
+          pu.apply();
+          refs.powerupModal.style.display = "none";
+          refs.pauseBtn.style.display = "block";
+          state.phase = "playing";
+          startNextWave();
+        };
+        card.addEventListener("click", pick, { once: true });
+        card.addEventListener("touchend", pick, { once: true, passive: false });
+        refs.powerupCards.appendChild(card);
+      });
+
+      refs.powerupModal.style.display = "flex";
     }
 
     // =========================
@@ -1253,14 +1515,17 @@
         return;
       }
       state.wave += 1;
+      const isBossWave = state.wave % 5 === 0;
       state.waveSpawner.active = true;
-      state.waveSpawner.toSpawn = waveEnemyCount(state.wave);
+      state.waveSpawner.toSpawn = isBossWave ? 1 + Math.floor(state.wave / 5) : waveEnemyCount(state.wave);
       state.waveSpawner.spawned = 0;
       state.waveSpawner.interval = waveSpawnInterval(state.wave);
       state.waveSpawner.timer = 0;
+      state.waveSpawner.isBossWave = isBossWave;
       state.waveDelayTimer = 0;
 
-      showWaveBanner(state.wave);
+      const label = isBossWave ? `!! BOSS WAVE ${pad(state.wave, 2)} !!` : `WAVE ${pad(state.wave, 2)}`;
+      showWaveBanner(label, isBossWave);
       sfxWaveStart();
       updateHUD();
     }
@@ -1277,15 +1542,23 @@
       if (state.waveSpawner.spawned < state.waveSpawner.toSpawn) {
         state.waveSpawner.timer -= dt;
         if (state.waveSpawner.timer <= 0) {
-          const pool = getWaveEnemyPool(state.wave);
-          spawnEnemy(randomChoice(pool));
+          if (state.waveSpawner.isBossWave && state.waveSpawner.spawned === 0) {
+            spawnEnemy("boss");
+          } else {
+            const pool = getWaveEnemyPool(state.wave);
+            spawnEnemy(randomChoice(pool));
+          }
           state.waveSpawner.timer = state.waveSpawner.interval;
         }
       }
 
       if (isWaveCleared()) {
         state.waveSpawner.active = false;
-        state.waveDelayTimer = 2.5;
+        setTimeout(() => {
+          if (state.phase === "playing") {
+            showPowerupScreen();
+          }
+        }, 1200);
       }
     }
 
@@ -1314,15 +1587,19 @@
       }
     }
 
-    function showWaveBanner(wave) {
-      refs.waveBanner.textContent = `WAVE ${pad(wave, 2)}`;
+    function showWaveBanner(label, isBoss = false) {
+      refs.waveBanner.textContent = label;
+      refs.waveBanner.style.color = isBoss ? "#ff6600" : "var(--yellow)";
+      refs.waveBanner.style.textShadow = isBoss
+        ? "0 0 10px rgba(255,102,0,0.95), 0 0 24px rgba(255,102,0,0.55)"
+        : "0 0 10px rgba(255,234,0,0.95), 0 0 20px rgba(255,234,0,0.55)";
       refs.waveBanner.style.opacity = "1";
       refs.waveBanner.style.transform = "translateX(-50%) scale(1)";
 
       setTimeout(() => {
         refs.waveBanner.style.transform = "translateX(-50%) scale(0.9)";
         refs.waveBanner.style.opacity = "0";
-      }, 620);
+      }, 900);
     }
 
     function triggerGameOver() {
@@ -1331,7 +1608,13 @@
       }
       state.phase = "gameover";
       sfxGameOver();
+
+      const prevBest = parseInt(localStorage.getItem("invasion_best") || "0", 10);
+      const newBest = Math.max(prevBest, state.score);
+      localStorage.setItem("invasion_best", String(newBest));
+
       refs.goScore.textContent = pad(state.score, 4);
+      refs.goBest.textContent = pad(newBest, 4);
       refs.goWaves.textContent = pad(state.wave, 2);
       refs.goKills.textContent = pad(state.kills, 3);
       refs.gameOver.style.display = "flex";
@@ -1341,7 +1624,10 @@
       state.phase = "placement";
       state.arenaPlaced = false;
       refs.placementHint.style.opacity = "1";
+      refs.pauseBtn.style.display = "none";
+      refs.pauseBtn.innerHTML = "&#9646;&#9646; PAUSE";
       refs.gameOver.style.display = "none";
+      refs.powerupModal.style.display = "none";
       clearWorld();
       resetCombatValues();
       updateHUD();
@@ -1350,6 +1636,7 @@
     function startPlayingPhase() {
       state.phase = "playing";
       refs.placementHint.style.opacity = "0";
+      refs.pauseBtn.style.display = "block";
       state.wave = 0;
       state.waveDelayTimer = 0;
       startNextWave();
@@ -1368,6 +1655,11 @@
       state.waveDelayTimer = 0;
       state.enemies.length = 0;
       state.effects.length = 0;
+      state.combo = 0;
+      state.comboTimer = 0;
+      state.shootCooldown = 220;
+      state.comboTimeLimit = 2.2;
+      state.coreMaxHp = 100;
     }
 
     // =========================
@@ -1420,6 +1712,9 @@
     }
 
     function shootAt(clientX, clientY) {
+      const now = performance.now();
+      if (now - runtime.lastShootTs < state.shootCooldown) return;
+      runtime.lastShootTs = now;
       if (!setRayFromScreen(clientX, clientY)) {
         return;
       }
@@ -1534,14 +1829,20 @@
           runtime.coreHalo.setAttribute("scale", `${pulse} ${pulse} ${pulse}`);
         }
 
+        if (state.phase === "paused") {
+          return;
+        }
+
         if (state.phase === "playing") {
-          updateSpawner(dt);
-          if (!state.waveSpawner.active && state.waveDelayTimer > 0) {
-            state.waveDelayTimer -= dt;
-            if (state.waveDelayTimer <= 0) {
-              startNextWave();
+          if (state.comboTimer > 0) {
+            state.comboTimer -= dt;
+            if (state.comboTimer <= 0) {
+              state.combo = 0;
+              refs.comboBanner.style.opacity = "0";
             }
           }
+
+          updateSpawner(dt);
         }
 
         const corePos = new THREE.Vector3(state.arenaPos.x, state.groundY + 0.38, state.arenaPos.z);
@@ -1685,6 +1986,20 @@
 
       refs.restartBtn.addEventListener("click", onRestartPress, { passive: false });
       refs.restartBtn.addEventListener("touchend", onRestartPress, { passive: false });
+
+      const onPausePress = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (state.phase === "playing") {
+          state.phase = "paused";
+          refs.pauseBtn.innerHTML = "&#9654; RESUME";
+        } else if (state.phase === "paused") {
+          state.phase = "playing";
+          refs.pauseBtn.innerHTML = "&#9646;&#9646; PAUSE";
+        }
+      };
+      refs.pauseBtn.addEventListener("click", onPausePress, { passive: false });
+      refs.pauseBtn.addEventListener("touchend", onPausePress, { passive: false });
     }
 
     // =========================
