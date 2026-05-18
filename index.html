@@ -1596,20 +1596,44 @@
         refs.startBtn.textContent = "BOOTING...";
 
         try {
-          // IMPORTANT: requestOrientationPermissionIfNeeded must run in direct user gesture.
-          await requestOrientationPermissionIfNeeded();
+          // Start camera first in the user gesture to ensure getUserMedia prompt runs.
+          try {
+            await startCameraFeed();
+          } catch (camErr) {
+            console.warn('Camera start failed:', camErr);
+            // show diagnostic and allow retry
+            showDiagMessage('camera', String(camErr));
+          }
 
-          // After orientation permission (which required gesture) we can start camera and audio async safely.
-          await startCameraFeed();
-          await resumeAudio();
+          // Then request orientation permission (must also be in gesture on iOS).
+          try {
+            await requestOrientationPermissionIfNeeded();
+          } catch (oriErr) {
+            console.warn('Orientation permission failed:', oriErr);
+            showDiagMessage('orientation', String(oriErr));
+          }
 
-          refs.startModal.style.display = "none";
-          startPlacementPhase();
+          // Finally ensure audio is running (also needs gesture resume on iOS).
+          try {
+            await resumeAudio();
+          } catch (audErr) {
+            console.warn('Audio resume failed:', audErr);
+            showDiagMessage('audio', String(audErr));
+          }
+
+          // If camera started, proceed. If not, keep modal so user can retry.
+          if (state.cameraReady) {
+            refs.startModal.style.display = 'none';
+            startPlacementPhase();
+          } else {
+            refs.startBtn.disabled = false;
+            refs.startBtn.textContent = 'INITIATE';
+          }
         } catch (err) {
-          console.warn("init failed:", err);
+          console.warn('init failed unexpected:', err);
           alert(`No se pudo iniciar: ${err.message || err}`);
           refs.startBtn.disabled = false;
-          refs.startBtn.textContent = "INITIATE";
+          refs.startBtn.textContent = 'INITIATE';
         } finally {
           state.initInProgress = false;
         }
@@ -1625,6 +1649,93 @@
 
       refs.restartBtn.addEventListener("click", onRestartPress, { passive: false });
       refs.restartBtn.addEventListener("touchend", onRestartPress, { passive: false });
+    }
+
+    // =========================
+    // Panel diagnostico y reintentos
+    // =========================
+    function showDiagMessage(type, text) {
+      let panel = document.getElementById('diagPanel');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'diagPanel';
+        panel.style.position = 'fixed';
+        panel.style.left = '12px';
+        panel.style.top = '12px';
+        panel.style.zIndex = '40';
+        panel.style.background = 'rgba(0,0,0,0.6)';
+        panel.style.border = '1px solid rgba(0,240,255,0.6)';
+        panel.style.color = 'var(--cyan)';
+        panel.style.padding = '8px';
+        panel.style.fontFamily = 'Share Tech Mono, monospace';
+        panel.style.fontSize = '12px';
+        panel.style.maxWidth = '46%';
+        panel.style.backdropFilter = 'blur(4px)';
+        document.body.appendChild(panel);
+      }
+
+      const time = new Date().toLocaleTimeString();
+      const msg = document.createElement('div');
+      msg.style.marginBottom = '6px';
+      msg.innerHTML = `<strong>${type.toUpperCase()}</strong> [${time}]: ${escapeHtml(text)}`;
+      panel.appendChild(msg);
+
+      // add retry buttons for camera/orientation/audio
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.marginTop = '4px';
+
+      if (type === 'camera') {
+        const r = document.createElement('button');
+        r.textContent = 'Retry Camera';
+        r.style.cursor = 'pointer';
+        r.addEventListener('click', async () => {
+          try {
+            await startCameraFeed();
+            msg.innerHTML += ' (retry ok)';
+          } catch (e) {
+            msg.innerHTML += ` (retry failed: ${escapeHtml(String(e))})`;
+          }
+        });
+        actions.appendChild(r);
+      }
+
+      if (type === 'orientation') {
+        const r2 = document.createElement('button');
+        r2.textContent = 'Retry Orientation';
+        r2.style.cursor = 'pointer';
+        r2.addEventListener('click', async () => {
+          try {
+            await requestOrientationPermissionIfNeeded();
+            msg.innerHTML += ' (ok)';
+          } catch (e) {
+            msg.innerHTML += ` (failed: ${escapeHtml(String(e))})`;
+          }
+        });
+        actions.appendChild(r2);
+      }
+
+      if (type === 'audio') {
+        const r3 = document.createElement('button');
+        r3.textContent = 'Resume Audio';
+        r3.style.cursor = 'pointer';
+        r3.addEventListener('click', async () => {
+          try {
+            await resumeAudio();
+            msg.innerHTML += ' (ok)';
+          } catch (e) {
+            msg.innerHTML += ` (failed: ${escapeHtml(String(e))})`;
+          }
+        });
+        actions.appendChild(r3);
+      }
+
+      panel.appendChild(actions);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
 
     // =========================
