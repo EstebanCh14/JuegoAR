@@ -552,7 +552,6 @@
     renderer="alpha: true; antialias: true; colorManagement: true"
     vr-mode-ui="enabled: false"
     embedded
-    background="color: #00000000"
   >
     <a-entity id="userCamera" camera="near: 0.01; far: 120" position="0 1.6 0" look-controls="touchEnabled: false; magicWindowTrackingEnabled: true"></a-entity>
     <a-entity id="worldRoot"></a-entity>
@@ -1433,7 +1432,7 @@
       const targets = [];
       for (let i = 0; i < state.enemies.length; i += 1) {
         const e = state.enemies[i];
-        const mesh = e.el.getObject3D("mesh");
+        const mesh = e.bodyEl.getObject3D("mesh");
         if (mesh) {
           targets.push(mesh);
         }
@@ -1827,6 +1826,7 @@
         refs.scene.renderer.domElement.style.background = 'transparent';
         refs.scene.renderer.domElement.style.opacity = '1';
       }
+      refs.scene.object3D.background = null;
       updateHUD();
       attachInput();
     }
