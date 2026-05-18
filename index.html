@@ -1365,6 +1365,10 @@
 
     function attachInput() {
       const touchHandler = (ev) => {
+        const actionable = state.phase === "placement" || state.phase === "playing";
+        if (!actionable) {
+          return;
+        }
         if (ev.cancelable) {
           ev.preventDefault();
         }
@@ -1376,6 +1380,10 @@
       };
 
       const clickHandler = (ev) => {
+        const actionable = state.phase === "placement" || state.phase === "playing";
+        if (!actionable) {
+          return;
+        }
         if (ev.cancelable) {
           ev.preventDefault();
         }
