@@ -69,6 +69,7 @@
       inset: 0;
       z-index: 2;
       pointer-events: auto;
+      background: transparent !important;
     }
 
     #arScene canvas,
@@ -79,6 +80,10 @@
       height: 100% !important;
       background: transparent !important;
       opacity: 1 !important;
+    }
+
+    #arScene canvas {
+      mix-blend-mode: normal;
     }
 
     #hud {
@@ -609,6 +614,7 @@
         <li>Muevete con el celular para mirar</li>
       </ul>
       <button id="startBtn" class="btn">INITIATE</button>
+      <button id="motionBtn" class="btn" style="display:none; margin-top:10px; font-size:32px;">ENABLE MOTION</button>
       <div class="hint">Requiere camara + giroscopio</div>
     </div>
   </div>
@@ -703,6 +709,7 @@
       worldRoot: document.getElementById("worldRoot"),
       startModal: document.getElementById("startModal"),
       startBtn: document.getElementById("startBtn"),
+      motionBtn: document.getElementById("motionBtn"),
       placementHint: document.getElementById("placementHint"),
       scoreValue: document.getElementById("scoreValue"),
       waveValue: document.getElementById("waveValue"),
@@ -931,6 +938,12 @@
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Este navegador no soporta getUserMedia o no esta en HTTPS.");
       }
+
+      refs.video.muted = true;
+      refs.video.autoplay = true;
+      refs.video.playsInline = true;
+      refs.video.setAttribute("webkit-playsinline", "true");
+      refs.video.setAttribute("autoplay", "true");
 
       const oldStream = refs.video.srcObject;
       if (oldStream && typeof oldStream.getTracks === "function") {
@@ -1577,9 +1590,8 @@
       state.initInProgress = true;
 
       try {
-        await resumeAudio();
-        await requestOrientationPermissionIfNeeded();
         await startCameraFeed();
+        await resumeAudio();
         refs.startModal.style.display = "none";
         startPlacementPhase();
       } catch (err) {
@@ -1596,6 +1608,11 @@
       state.phase = "placement";
       refs.gameOver.style.display = "none";
       refs.placementHint.style.opacity = "1";
+      refs.motionBtn.style.display = 'none';
+      refs.motionBtn.disabled = false;
+      refs.motionBtn.textContent = 'ENABLE MOTION';
+      refs.startBtn.disabled = false;
+      refs.startBtn.textContent = 'INITIATE';
       updateHUD();
     }
 
@@ -1610,41 +1627,20 @@
         refs.startBtn.textContent = "BOOTING...";
 
         try {
-          // Start camera first in the user gesture to ensure getUserMedia prompt runs.
-          try {
-            await startCameraFeed();
-          } catch (camErr) {
-            console.warn('Camera start failed:', camErr);
-            // show diagnostic and allow retry
-            showDiagMessage('camera', String(camErr));
-          }
+          await startCameraFeed();
+          await resumeAudio();
 
-          // Then request orientation permission (must also be in gesture on iOS).
-          try {
-            await requestOrientationPermissionIfNeeded();
-          } catch (oriErr) {
-            console.warn('Orientation permission failed:', oriErr);
-            showDiagMessage('orientation', String(oriErr));
-          }
-
-          // Finally ensure audio is running (also needs gesture resume on iOS).
-          try {
-            await resumeAudio();
-          } catch (audErr) {
-            console.warn('Audio resume failed:', audErr);
-            showDiagMessage('audio', String(audErr));
-          }
-
-          // If camera started, proceed. If not, keep modal so user can retry.
-          if (state.cameraReady) {
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && !state.orientationReady) {
+            refs.motionBtn.style.display = 'block';
+            refs.startBtn.textContent = 'CAMERA READY';
+            refs.startBtn.disabled = true;
+          } else {
             refs.startModal.style.display = 'none';
             startPlacementPhase();
-          } else {
-            refs.startBtn.disabled = false;
-            refs.startBtn.textContent = 'INITIATE';
           }
         } catch (err) {
           console.warn('init failed unexpected:', err);
+          showDiagMessage('camera', String(err));
           alert(`No se pudo iniciar: ${err.message || err}`);
           refs.startBtn.disabled = false;
           refs.startBtn.textContent = 'INITIATE';
@@ -1655,6 +1651,33 @@
 
       refs.startBtn.addEventListener("click", onStartPress, { passive: false });
       refs.startBtn.addEventListener("touchend", onStartPress, { passive: false });
+
+      const onMotionPress = async (ev) => {
+        ev.preventDefault();
+        if (state.initInProgress) {
+          return;
+        }
+        state.initInProgress = true;
+        refs.motionBtn.disabled = true;
+        refs.motionBtn.textContent = 'CHECKING...';
+
+        try {
+          await requestOrientationPermissionIfNeeded();
+          refs.motionBtn.style.display = 'none';
+          refs.startModal.style.display = 'none';
+          startPlacementPhase();
+        } catch (err) {
+          console.warn('motion init failed:', err);
+          showDiagMessage('orientation', String(err));
+          refs.motionBtn.disabled = false;
+          refs.motionBtn.textContent = 'ENABLE MOTION';
+        } finally {
+          state.initInProgress = false;
+        }
+      };
+
+      refs.motionBtn.addEventListener('click', onMotionPress, { passive: false });
+      refs.motionBtn.addEventListener('touchend', onMotionPress, { passive: false });
 
       const onRestartPress = (ev) => {
         ev.preventDefault();
@@ -1761,7 +1784,7 @@
       btn.innerText = 'FIRE';
       btn.style.position = 'fixed';
       btn.style.right = '14px';
-      btn.style.bottom = 'calc(18px + env(safe-area-inset-bottom, 0px) + 44px)';
+      btn.style.bottom = 'calc(18px + env(safe-area-inset-bottom, 0px) + 86px)';
       btn.style.zIndex = '12';
       btn.style.pointerEvents = 'auto';
       btn.style.border = '1px solid rgba(0,240,255,0.9)';
@@ -1769,10 +1792,11 @@
       btn.style.color = '#eaffff';
       btn.style.fontFamily = 'VT323, monospace';
       btn.style.fontSize = '32px';
-      btn.style.padding = '12px 18px';
+      btn.style.padding = '14px 20px';
       btn.style.borderRadius = '6px';
       btn.style.boxShadow = '0 0 12px rgba(0,240,255,0.12)';
       btn.style.userSelect = 'none';
+      btn.style.touchAction = 'manipulation';
       btn.setAttribute('aria-label', 'Fire');
 
       document.body.appendChild(btn);
@@ -1791,12 +1815,18 @@
         }
       };
 
+      btn.addEventListener('pointerdown', fire, { passive: false });
       btn.addEventListener('click', fire, { passive: false });
       btn.addEventListener('touchend', fire, { passive: false });
     })();
 
     function onSceneReady() {
       state.sceneReady = true;
+      if (refs.scene.renderer && refs.scene.renderer.setClearColor) {
+        refs.scene.renderer.setClearColor(0x000000, 0);
+        refs.scene.renderer.domElement.style.background = 'transparent';
+        refs.scene.renderer.domElement.style.opacity = '1';
+      }
       updateHUD();
       attachInput();
     }
