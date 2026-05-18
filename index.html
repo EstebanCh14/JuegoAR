@@ -653,6 +653,7 @@
 
     const state = {
       phase: "permission",
+      initInProgress: false,
       sceneReady: false,
       audioReady: false,
       cameraReady: false,
@@ -708,6 +709,7 @@
       corePivot: null,
       coreHalo: null,
       coreLight: null,
+      lastTouchTs: 0,
       audio: {
         ctx: null,
         master: null
@@ -855,26 +857,108 @@
     // Camara y permisos
     // =========================
     async function requestOrientationPermissionIfNeeded() {
+      if (state.orientationReady) {
+        return;
+      }
+
       if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
-        const result = await DeviceOrientationEvent.requestPermission();
-        if (result !== "granted") {
+        const orientation = await DeviceOrientationEvent.requestPermission();
+        if (orientation !== "granted") {
           throw new Error("Permiso de orientacion denegado.");
         }
       }
+
+      // Algunos iOS solicitan permiso por DeviceMotion ademas de DeviceOrientation.
+      if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
+        const motion = await DeviceMotionEvent.requestPermission();
+        if (motion !== "granted") {
+          throw new Error("Permiso de movimiento denegado.");
+        }
+      }
+
       state.orientationReady = true;
     }
 
+    async function ensureVideoStarted(videoEl) {
+      try {
+        await videoEl.play();
+      } catch (_e) {
+        // Safari puede rechazar play al primer intento incluso con muted, reintentamos tras metadata.
+        await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error("No se pudo iniciar el stream de camara."));
+          }, 4000);
+
+          const onReady = async () => {
+            try {
+              await videoEl.play();
+              cleanup();
+              resolve();
+            } catch (err) {
+              cleanup();
+              reject(err);
+            }
+          };
+
+          const cleanup = () => {
+            clearTimeout(timeoutId);
+            videoEl.removeEventListener("loadedmetadata", onReady);
+            videoEl.removeEventListener("canplay", onReady);
+          };
+
+          videoEl.addEventListener("loadedmetadata", onReady, { once: true });
+          videoEl.addEventListener("canplay", onReady, { once: true });
+        });
+      }
+    }
+
     async function startCameraFeed() {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Este navegador no soporta getUserMedia o no esta en HTTPS.");
+      }
+
+      const oldStream = refs.video.srcObject;
+      if (oldStream && typeof oldStream.getTracks === "function") {
+        oldStream.getTracks().forEach((track) => track.stop());
+      }
+
+      const constraintsList = [
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        },
+        {
+          audio: false,
+          video: { facingMode: "environment" }
+        },
+        {
+          audio: false,
+          video: true
         }
-      });
+      ];
+
+      let stream = null;
+      let lastErr = null;
+      for (let i = 0; i < constraintsList.length; i += 1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
+          break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      if (!stream) {
+        throw lastErr || new Error("No se pudo abrir la camara.");
+      }
+
       refs.video.srcObject = stream;
-      await refs.video.play();
+      await ensureVideoStarted(refs.video);
       state.cameraReady = true;
     }
 
@@ -1369,6 +1453,7 @@
         if (!actionable) {
           return;
         }
+        runtime.lastTouchTs = performance.now();
         if (ev.cancelable) {
           ev.preventDefault();
         }
@@ -1382,6 +1467,9 @@
       const clickHandler = (ev) => {
         const actionable = state.phase === "placement" || state.phase === "playing";
         if (!actionable) {
+          return;
+        }
+        if (performance.now() - runtime.lastTouchTs < 450) {
           return;
         }
         if (ev.cancelable) {
@@ -1469,14 +1557,21 @@
     // Flujo de arranque y reinicio
     // =========================
     async function initSession() {
+      if (state.initInProgress) {
+        return;
+      }
+      state.initInProgress = true;
+
       try {
+        await resumeAudio();
         await requestOrientationPermissionIfNeeded();
         await startCameraFeed();
-        await resumeAudio();
         refs.startModal.style.display = "none";
         startPlacementPhase();
       } catch (err) {
         alert(`No se pudo iniciar: ${err.message || err}`);
+      } finally {
+        state.initInProgress = false;
       }
     }
 
@@ -1491,8 +1586,11 @@
     }
 
     function bindUI() {
-      refs.startBtn.addEventListener("click", async (ev) => {
+      const onStartPress = async (ev) => {
         ev.preventDefault();
+        if (state.initInProgress) {
+          return;
+        }
         refs.startBtn.disabled = true;
         refs.startBtn.textContent = "BOOTING...";
         await initSession();
@@ -1500,12 +1598,18 @@
           refs.startBtn.disabled = false;
           refs.startBtn.textContent = "INITIATE";
         }
-      });
+      };
 
-      refs.restartBtn.addEventListener("click", (ev) => {
+      refs.startBtn.addEventListener("click", onStartPress, { passive: false });
+      refs.startBtn.addEventListener("touchend", onStartPress, { passive: false });
+
+      const onRestartPress = (ev) => {
         ev.preventDefault();
         fullResetToPlacement();
-      });
+      };
+
+      refs.restartBtn.addEventListener("click", onRestartPress, { passive: false });
+      refs.restartBtn.addEventListener("touchend", onRestartPress, { passive: false });
     }
 
     function onSceneReady() {
