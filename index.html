@@ -2083,16 +2083,28 @@
         refs.startBtn.textContent = "BOOTING...";
 
         try {
-          const hasWebXR = !!(navigator.xr &&
-            await navigator.xr.isSessionSupported("immersive-ar").catch(() => false));
+          let usedWebXR = false;
 
-          if (hasWebXR) {
-            await resumeAudio();
-            refs.video.style.display = "none";
-            refs.startModal.style.display = "none";
-            await refs.scene.enterAR();
-            startPlacementPhase();
-          } else {
+          // WebXR AR: solo si el dispositivo lo soporta y A-Frame tiene enterAR()
+          if (navigator.xr && typeof refs.scene.enterAR === "function") {
+            try {
+              const supported = await navigator.xr.isSessionSupported("immersive-ar");
+              if (supported) {
+                await resumeAudio();
+                await refs.scene.enterAR();
+                // Solo ocultar video despues de confirmar que AR inicio
+                refs.video.style.display = "none";
+                refs.startModal.style.display = "none";
+                startPlacementPhase();
+                usedWebXR = true;
+              }
+            } catch (_) {
+              // WebXR fallo o no disponible — continuar con modo giroscopio
+            }
+          }
+
+          // Modo giroscopio (fallback universal)
+          if (!usedWebXR) {
             await startCameraFeed();
             await resumeAudio();
 
