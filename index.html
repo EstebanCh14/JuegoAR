@@ -620,18 +620,11 @@
     id="arScene"
     renderer="alpha: true; antialias: true; colorManagement: true"
     vr-mode-ui="enabled: false"
-    webxr="optionalFeatures: hit-test,dom-overlay; overlayElement: #hud"
     embedded
   >
     <a-entity id="userCamera" camera="near: 0.01; far: 120" position="0 1.6 0" look-controls="touchEnabled: false; magicWindowTrackingEnabled: true"></a-entity>
     <a-entity id="worldRoot"></a-entity>
-    <a-entity game-loop ar-hit-test></a-entity>
-    <a-entity id="arReticle" visible="false">
-      <a-ring radius-inner="0.055" radius-outer="0.075" rotation="-90 0 0"
-        material="color: #00f0ff; emissive: #00f0ff; emissiveIntensity: 1.5; opacity: 0.95; transparent: true; shader: flat"></a-ring>
-      <a-ring radius-inner="0.13" radius-outer="0.14" rotation="-90 0 0"
-        material="color: #00f0ff; emissive: #00f0ff; emissiveIntensity: 0.7; opacity: 0.45; transparent: true; shader: flat"></a-ring>
-    </a-entity>
+    <a-entity game-loop></a-entity>
   </a-scene>
 
   <div id="hud">
@@ -1774,24 +1767,6 @@
     }
 
     function placeArenaByTap(clientX, clientY) {
-      // WebXR mode: usar posicion detectada por hit-testing en superficie real
-      const gameLoopEl = document.querySelector("[ar-hit-test]");
-      if (gameLoopEl && gameLoopEl.components["ar-hit-test"]) {
-        const hitPos = gameLoopEl.components["ar-hit-test"].hitPosition;
-        if (hitPos) {
-          state.arenaPos.copy(hitPos);
-          state.groundY = hitPos.y;
-          createArenaAt(hitPos);
-          state.arenaPlaced = true;
-          const reticle = document.getElementById("arReticle");
-          if (reticle) reticle.setAttribute("visible", "false");
-          sfxPlace();
-          startPlayingPhase();
-          return;
-        }
-      }
-
-      // Fallback: raycast hacia plano virtual estimado por giroscopio
       if (!setRayFromScreen(clientX, clientY)) {
         return;
       }
@@ -1920,57 +1895,6 @@
     }
 
     // =========================
-    // Componente WebXR hit-test (ancla el juego a superficies reales con ARCore)
-    // =========================
-    AFRAME.registerComponent("ar-hit-test", {
-      init: function () {
-        this.hitTestSource = null;
-        this.tempMatrix = new THREE.Matrix4();
-        this.hitPosition = null;
-
-        var self = this;
-        this.el.sceneEl.addEventListener("enter-vr", function () {
-          var session = self.el.sceneEl.renderer.xr.getSession();
-          if (!session || !session.requestHitTestSource) return;
-          session.requestReferenceSpace("viewer").then(function (viewerSpace) {
-            return session.requestHitTestSource({ space: viewerSpace });
-          }).then(function (src) {
-            self.hitTestSource = src;
-            session.addEventListener("end", function () { self.hitTestSource = null; });
-          }).catch(function () {});
-        });
-
-        this.el.sceneEl.addEventListener("exit-vr", function () {
-          self.hitTestSource = null;
-          self.hitPosition = null;
-        });
-      },
-
-      tick: function () {
-        var frame = this.el.sceneEl.frame;
-        if (!frame || !this.hitTestSource) return;
-
-        var refSpace = this.el.sceneEl.renderer.xr.getReferenceSpace();
-        var results = frame.getHitTestResults(this.hitTestSource);
-        var reticleEl = document.getElementById("arReticle");
-        if (!reticleEl) return;
-
-        if (results.length > 0 && state.phase === "placement") {
-          var pose = results[0].getPose(refSpace);
-          if (pose) {
-            this.tempMatrix.fromArray(pose.transform.matrix);
-            var p = new THREE.Vector3().setFromMatrixPosition(this.tempMatrix);
-            this.hitPosition = p.clone();
-            reticleEl.setAttribute("position", p.x + " " + p.y + " " + p.z);
-            reticleEl.setAttribute("visible", "true");
-          }
-        } else {
-          reticleEl.setAttribute("visible", "false");
-        }
-      }
-    });
-
-    // =========================
     // Loop principal en componente A-Frame
     // =========================
     AFRAME.registerComponent("game-loop", {
@@ -2086,39 +2010,16 @@
         refs.startBtn.textContent = "BOOTING...";
 
         try {
-          let usedWebXR = false;
+          await startCameraFeed();
+          await resumeAudio();
 
-          // WebXR AR: solo si el dispositivo lo soporta y A-Frame tiene enterAR()
-          if (navigator.xr && typeof refs.scene.enterAR === "function") {
-            try {
-              const supported = await navigator.xr.isSessionSupported("immersive-ar");
-              if (supported) {
-                await resumeAudio();
-                await refs.scene.enterAR();
-                // Solo ocultar video despues de confirmar que AR inicio
-                refs.video.style.display = "none";
-                refs.startModal.style.display = "none";
-                startPlacementPhase();
-                usedWebXR = true;
-              }
-            } catch (_) {
-              // WebXR fallo o no disponible — continuar con modo giroscopio
-            }
-          }
-
-          // Modo giroscopio (fallback universal)
-          if (!usedWebXR) {
-            await startCameraFeed();
-            await resumeAudio();
-
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && !state.orientationReady) {
-              refs.motionBtn.style.display = 'block';
-              refs.startBtn.textContent = 'CAMERA READY';
-              refs.startBtn.disabled = true;
-            } else {
-              refs.startModal.style.display = 'none';
-              startPlacementPhase();
-            }
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && !state.orientationReady) {
+            refs.motionBtn.style.display = 'block';
+            refs.startBtn.textContent = 'CAMERA READY';
+            refs.startBtn.disabled = true;
+          } else {
+            refs.startModal.style.display = 'none';
+            startPlacementPhase();
           }
         } catch (err) {
           console.warn('init failed unexpected:', err);
