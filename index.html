@@ -731,54 +731,6 @@
   <script>
     "use strict";
 
-    // Componente WebXR: detecta superficies reales y ancla el juego con 6-DoF (ARCore).
-    // Fallback automatico a modo giroscopio si WebXR no esta disponible.
-    AFRAME.registerComponent("ar-hit-test", {
-      init() {
-        this.hitTestSource = null;
-        this.tempMatrix = new THREE.Matrix4();
-        this.hitPosition = null;
-
-        this.el.sceneEl.addEventListener("enter-vr", async () => {
-          const session = this.el.sceneEl.renderer.xr.getSession();
-          if (!session || !session.requestHitTestSource) return;
-          try {
-            const viewerSpace = await session.requestReferenceSpace("viewer");
-            this.hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-            session.addEventListener("end", () => { this.hitTestSource = null; });
-          } catch (_) {}
-        });
-
-        this.el.sceneEl.addEventListener("exit-vr", () => {
-          this.hitTestSource = null;
-          this.hitPosition = null;
-        });
-      },
-
-      tick() {
-        const frame = this.el.sceneEl.frame;
-        if (!frame || !this.hitTestSource) return;
-
-        const refSpace = this.el.sceneEl.renderer.xr.getReferenceSpace();
-        const results = frame.getHitTestResults(this.hitTestSource);
-        const reticleEl = document.getElementById("arReticle");
-        if (!reticleEl) return;
-
-        if (results.length > 0 && state.phase === "placement") {
-          const pose = results[0].getPose(refSpace);
-          if (pose) {
-            this.tempMatrix.fromArray(pose.transform.matrix);
-            const p = new THREE.Vector3().setFromMatrixPosition(this.tempMatrix);
-            this.hitPosition = p.clone();
-            reticleEl.setAttribute("position", `${p.x} ${p.y} ${p.z}`);
-            reticleEl.setAttribute("visible", "true");
-          }
-        } else {
-          reticleEl.setAttribute("visible", "false");
-        }
-      }
-    });
-
     // =========================
     // Configuracion y estado global
     // =========================
@@ -1966,6 +1918,57 @@
       window.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
       window.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
     }
+
+    // =========================
+    // Componente WebXR hit-test (ancla el juego a superficies reales con ARCore)
+    // =========================
+    AFRAME.registerComponent("ar-hit-test", {
+      init: function () {
+        this.hitTestSource = null;
+        this.tempMatrix = new THREE.Matrix4();
+        this.hitPosition = null;
+
+        var self = this;
+        this.el.sceneEl.addEventListener("enter-vr", function () {
+          var session = self.el.sceneEl.renderer.xr.getSession();
+          if (!session || !session.requestHitTestSource) return;
+          session.requestReferenceSpace("viewer").then(function (viewerSpace) {
+            return session.requestHitTestSource({ space: viewerSpace });
+          }).then(function (src) {
+            self.hitTestSource = src;
+            session.addEventListener("end", function () { self.hitTestSource = null; });
+          }).catch(function () {});
+        });
+
+        this.el.sceneEl.addEventListener("exit-vr", function () {
+          self.hitTestSource = null;
+          self.hitPosition = null;
+        });
+      },
+
+      tick: function () {
+        var frame = this.el.sceneEl.frame;
+        if (!frame || !this.hitTestSource) return;
+
+        var refSpace = this.el.sceneEl.renderer.xr.getReferenceSpace();
+        var results = frame.getHitTestResults(this.hitTestSource);
+        var reticleEl = document.getElementById("arReticle");
+        if (!reticleEl) return;
+
+        if (results.length > 0 && state.phase === "placement") {
+          var pose = results[0].getPose(refSpace);
+          if (pose) {
+            this.tempMatrix.fromArray(pose.transform.matrix);
+            var p = new THREE.Vector3().setFromMatrixPosition(this.tempMatrix);
+            this.hitPosition = p.clone();
+            reticleEl.setAttribute("position", p.x + " " + p.y + " " + p.z);
+            reticleEl.setAttribute("visible", "true");
+          }
+        } else {
+          reticleEl.setAttribute("visible", "false");
+        }
+      }
+    });
 
     // =========================
     // Loop principal en componente A-Frame
