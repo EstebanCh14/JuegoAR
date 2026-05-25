@@ -636,9 +636,13 @@
         <div class="label">SCORE</div>
         <div class="value" id="scoreValue">0000</div>
       </div>
+      <div class="hud-cell" style="text-align:center;">
+        <div class="label">VIDAS</div>
+        <div class="value" id="livesValue" style="letter-spacing:4px;">◆◆◆</div>
+      </div>
       <div class="hud-cell" style="text-align:right;">
-        <div class="label">WAVE</div>
-        <div class="value" id="waveValue">00</div>
+        <div class="label">NIVEL</div>
+        <div class="value" id="waveValue">01</div>
       </div>
     </div>
 
@@ -651,7 +655,14 @@
       <div class="tick r"></div>
     </div>
 
-    <div id="waveBanner">WAVE 01</div>
+    <div id="waveBanner">NIVEL 01</div>
+    <div id="killProgress" style="
+      position:absolute; left:50%; top:calc(20% + var(--safe-top));
+      transform:translateX(-50%); font-family:'VT323',monospace;
+      font-size:20px; letter-spacing:3px; color:#00f0ff;
+      text-shadow:0 0 8px rgba(0,240,255,0.7);
+      pointer-events:none; opacity:0; transition:opacity 0.3s;
+    ">BAJAS 00/06</div>
     <div id="comboBanner" style="
       position:absolute; left:50%; top:calc(32% + var(--safe-top));
       transform:translateX(-50%); font-family:'VT323',monospace;
@@ -710,14 +721,24 @@
     </div>
   </div>
 
+  <div id="levelComplete" class="screen-center" style="display:none;">
+    <div class="panel">
+      <h2 class="title" style="color:#00f0ff; font-size:clamp(28px,8vw,52px);">NIVEL SUPERADO</h2>
+      <div class="stats">BAJAS<span id="lcKills">000</span></div>
+      <div class="stats">SCORE<span id="lcScore">0000</span></div>
+      <div id="lcNextInfo" class="subtitle" style="margin:10px 0; font-size:clamp(13px,3.5vw,18px);"></div>
+      <button id="nextLevelBtn" class="btn">SIGUIENTE NIVEL</button>
+    </div>
+  </div>
+
   <div id="gameOver" class="screen-center">
     <div class="panel">
-      <h2 class="gameover-title">SYSTEM FAILURE</h2>
+      <h2 class="gameover-title">SISTEMA CAIDO</h2>
+      <div class="stats">NIVEL<span id="goLevel">01</span></div>
       <div class="stats">SCORE<span id="goScore">0000</span></div>
       <div class="stats">BEST<span id="goBest">0000</span></div>
-      <div class="stats">WAVES<span id="goWaves">00</span></div>
-      <div class="stats">KILLS<span id="goKills">000</span></div>
-      <button id="restartBtn" class="btn">RESTART</button>
+      <div class="stats">BAJAS<span id="goKills">000</span></div>
+      <button id="restartBtn" class="btn">REINTENTAR</button>
     </div>
   </div>
 
@@ -727,6 +748,19 @@
     // =========================
     // Configuracion y estado global
     // =========================
+    const LEVELS = [
+      { name: "INICIACION",    goal:  6, pool: ["drone","drone","drone"],             interval: 1.6, maxOnScreen: 4,  coreHp: 100, bossEvery: 0 },
+      { name: "PATRULLA",      goal: 10, pool: ["drone","drone","swift"],             interval: 1.4, maxOnScreen: 5,  coreHp: 100, bossEvery: 0 },
+      { name: "INTERCEPCION",  goal: 14, pool: ["drone","swift","swift"],             interval: 1.2, maxOnScreen: 5,  coreHp: 100, bossEvery: 0 },
+      { name: "ASEDIO",        goal: 16, pool: ["drone","swift","tank"],              interval: 1.1, maxOnScreen: 6,  coreHp: 100, bossEvery: 0 },
+      { name: "INVASION",      goal: 18, pool: ["drone","swift","tank"],              interval: 1.0, maxOnScreen: 6,  coreHp: 100, bossEvery: 9 },
+      { name: "ESCUADRON",     goal: 20, pool: ["swift","swift","tank"],              interval: 0.9, maxOnScreen: 7,  coreHp:  90, bossEvery: 7 },
+      { name: "OFENSIVA",      goal: 22, pool: ["swift","tank","tank"],               interval: 0.8, maxOnScreen: 7,  coreHp:  80, bossEvery: 6 },
+      { name: "BOMBARDEO",     goal: 25, pool: ["swift","tank","tank"],               interval: 0.75,maxOnScreen: 8,  coreHp:  80, bossEvery: 5 },
+      { name: "APOCALIPSIS",   goal: 28, pool: ["swift","swift","tank","tank"],       interval: 0.65,maxOnScreen: 9,  coreHp:  70, bossEvery: 4 },
+      { name: "INVASION TOTAL",goal: 35, pool: ["swift","tank","tank"],               interval: 0.55,maxOnScreen: 10, coreHp:  60, bossEvery: 3 }
+    ];
+
     const ENEMY_TYPES = {
       drone: {
         id: "drone",
@@ -785,15 +819,14 @@
       coreHp: 100,
       score: 0,
       kills: 0,
-      wave: 0,
+      level: 1,
+      lives: 3,
+      levelKills: 0,
+      nextBossAt: Infinity,
       waveSpawner: {
         active: false,
-        toSpawn: 0,
-        spawned: 0,
-        interval: 1.4,
         timer: 0
       },
-      waveDelayTimer: 0,
       enemies: [],
       effects: [],
       combo: 0,
@@ -826,12 +859,19 @@
       gameOver: document.getElementById("gameOver"),
       goScore: document.getElementById("goScore"),
       goBest: document.getElementById("goBest"),
-      goWaves: document.getElementById("goWaves"),
+      goLevel: document.getElementById("goLevel"),
       goKills: document.getElementById("goKills"),
       restartBtn: document.getElementById("restartBtn"),
       pauseBtn: document.getElementById("pauseBtn"),
       powerupModal: document.getElementById("powerupModal"),
-      powerupCards: document.getElementById("powerupCards")
+      powerupCards: document.getElementById("powerupCards"),
+      killProgress: document.getElementById("killProgress"),
+      livesValue: document.getElementById("livesValue"),
+      levelComplete: document.getElementById("levelComplete"),
+      lcKills: document.getElementById("lcKills"),
+      lcScore: document.getElementById("lcScore"),
+      lcNextInfo: document.getElementById("lcNextInfo"),
+      nextLevelBtn: document.getElementById("nextLevelBtn")
     };
 
     const runtime = {
@@ -1192,18 +1232,6 @@
     // =========================
     // Enemigos
     // =========================
-    function getWaveEnemyPool(wave) {
-      if (wave <= 1) {
-        return ["drone", "drone", "drone", "drone"];
-      }
-      if (wave <= 3) {
-        return ["drone", "drone", "drone", "swift", "swift"];
-      }
-      if (wave <= 5) {
-        return ["drone", "drone", "swift", "swift", "tank"];
-      }
-      return ["drone", "swift", "swift", "swift", "tank", "tank"];
-    }
 
     function buildShipGeometry(type, parentEl) {
       const s = type.scale;
@@ -1390,6 +1418,7 @@
       const multiplier = state.combo >= 5 ? 4 : state.combo >= 3 ? 2 : 1;
       state.score += enemyObj.type.score * multiplier;
       state.kills += 1;
+      state.levelKills += 1;
       sfxKill();
 
       if (state.combo >= 2) {
@@ -1428,7 +1457,7 @@
       refs.hud.addEventListener("animationend", () => refs.hud.classList.remove("shaking"), { once: true });
       updateHUD();
       if (state.coreHp <= 0) {
-        triggerGameOver();
+        loseLife();
       }
     }
 
@@ -1570,7 +1599,7 @@
           refs.powerupModal.style.display = "none";
           refs.pauseBtn.style.display = "block";
           state.phase = "playing";
-          startNextWave();
+          startLevel(state.level + 1);
         };
         card.addEventListener("click", pick, { once: true });
         card.addEventListener("touchend", pick, { once: true, passive: false });
@@ -1581,65 +1610,112 @@
     }
 
     // =========================
-    // Oleadas
+    // Niveles (sistema de 10 niveles con 3 vidas)
     // =========================
-    function waveEnemyCount(n) {
-      return 3 + Math.floor(n * 1.8);
-    }
-
-    function waveSpawnInterval(n) {
-      return Math.max(0.45, 1.4 - n * 0.08);
-    }
-
-    function startNextWave() {
-      if (state.phase !== "playing") {
-        return;
-      }
-      state.wave += 1;
-      const isBossWave = state.wave % 5 === 0;
+    function startLevel(n) {
+      state.level = n;
+      state.lives = 3;
+      state.levelKills = 0;
+      const lvl = LEVELS[n - 1];
+      state.coreMaxHp = lvl.coreHp;
+      state.coreHp = lvl.coreHp;
+      state.nextBossAt = lvl.bossEvery > 0 ? lvl.bossEvery : Infinity;
+      state.enemies.forEach(function (e) { if (!e.dead) e.el.remove(); });
+      state.enemies.length = 0;
       state.waveSpawner.active = true;
-      state.waveSpawner.toSpawn = isBossWave ? 1 + Math.floor(state.wave / 5) : waveEnemyCount(state.wave);
-      state.waveSpawner.spawned = 0;
-      state.waveSpawner.interval = waveSpawnInterval(state.wave);
-      state.waveSpawner.timer = 0;
-      state.waveSpawner.isBossWave = isBossWave;
-      state.waveDelayTimer = 0;
-
-      const label = isBossWave ? `!! BOSS WAVE ${pad(state.wave, 2)} !!` : `WAVE ${pad(state.wave, 2)}`;
-      showWaveBanner(label, isBossWave);
+      state.waveSpawner.timer = 1.5;
+      showWaveBanner(`NIVEL ${pad(n, 2)}: ${lvl.name}`, n >= 8);
       sfxWaveStart();
       updateHUD();
     }
 
-    function isWaveCleared() {
-      const doneSpawning = state.waveSpawner.active && state.waveSpawner.spawned >= state.waveSpawner.toSpawn;
-      return doneSpawning && state.enemies.length === 0;
+    function restartCurrentLevel() {
+      state.levelKills = 0;
+      const lvl = LEVELS[state.level - 1];
+      state.coreMaxHp = lvl.coreHp;
+      state.coreHp = lvl.coreHp;
+      state.nextBossAt = lvl.bossEvery > 0 ? lvl.bossEvery : Infinity;
+      state.enemies.forEach(function (e) { if (!e.dead) e.el.remove(); });
+      state.enemies.length = 0;
+      state.effects.forEach(function (fx) { fx.el.remove(); });
+      state.effects.length = 0;
+      state.waveSpawner.active = true;
+      state.waveSpawner.timer = 1.8;
+      const attempt = 4 - state.lives;
+      showWaveBanner(`INTENTO ${attempt}  —  NIVEL ${pad(state.level, 2)}`, false);
+      sfxWaveStart();
+      updateHUD();
+    }
+
+    function levelComplete() {
+      if (state.phase !== "playing") return;
+      state.phase = "levelcomplete";
+      refs.pauseBtn.style.display = "none";
+      refs.killProgress.style.opacity = "0";
+      sfxWaveStart();
+      refs.lcKills.textContent = pad(state.kills, 3);
+      refs.lcScore.textContent = pad(state.score, 4);
+      if (state.level >= LEVELS.length) {
+        refs.lcNextInfo.textContent = "// INVASION DETENIDA — VICTORIA //";
+        refs.nextLevelBtn.textContent = "MENU";
+        const prevBest = parseInt(localStorage.getItem("invasion_best") || "0", 10);
+        localStorage.setItem("invasion_best", String(Math.max(prevBest, state.score)));
+      } else {
+        const next = LEVELS[state.level];
+        refs.lcNextInfo.textContent = `SIGUIENTE → NIVEL ${pad(state.level + 1, 2)}: ${next.name}`;
+        refs.nextLevelBtn.textContent = "SIGUIENTE NIVEL";
+      }
+      refs.levelComplete.style.display = "flex";
+    }
+
+    function loseLife() {
+      if (state.phase === "gameover" || state.phase === "losingLife") return;
+      state.lives = Math.max(0, state.lives - 1);
+      sfxGameOver();
+      oneShotOpacity(refs.damageFlash, 0.95, 80, 500);
+      refs.hud.classList.remove("shaking");
+      void refs.hud.offsetWidth;
+      refs.hud.classList.add("shaking");
+      refs.hud.addEventListener("animationend", function () { refs.hud.classList.remove("shaking"); }, { once: true });
+      updateHUD();
+      if (state.lives <= 0) {
+        setTimeout(function () { triggerGameOver(); }, 700);
+      } else {
+        state.phase = "losingLife";
+        const restantes = state.lives;
+        showWaveBanner(`NUCLEO DESTRUIDO — ${restantes} INTENTO${restantes !== 1 ? "S" : ""} RESTANTE${restantes !== 1 ? "S" : ""}`, false);
+        setTimeout(function () {
+          if (state.phase === "losingLife") {
+            state.phase = "playing";
+            restartCurrentLevel();
+          }
+        }, 2200);
+      }
     }
 
     function updateSpawner(dt) {
-      if (!state.waveSpawner.active) {
+      if (!state.waveSpawner.active) return;
+      const lvl = LEVELS[state.level - 1];
+      if (!lvl) return;
+      if (state.levelKills >= lvl.goal) {
+        if (state.enemies.length === 0) {
+          state.waveSpawner.active = false;
+          setTimeout(function () {
+            if (state.phase === "playing") levelComplete();
+          }, 800);
+        }
         return;
       }
-      if (state.waveSpawner.spawned < state.waveSpawner.toSpawn) {
-        state.waveSpawner.timer -= dt;
-        if (state.waveSpawner.timer <= 0) {
-          if (state.waveSpawner.isBossWave && state.waveSpawner.spawned === 0) {
-            spawnEnemy("boss");
-          } else {
-            const pool = getWaveEnemyPool(state.wave);
-            spawnEnemy(randomChoice(pool));
-          }
-          state.waveSpawner.timer = state.waveSpawner.interval;
+      if (state.enemies.length >= lvl.maxOnScreen) return;
+      state.waveSpawner.timer -= dt;
+      if (state.waveSpawner.timer <= 0) {
+        if (lvl.bossEvery > 0 && state.levelKills >= state.nextBossAt) {
+          spawnEnemy("boss");
+          state.nextBossAt += lvl.bossEvery;
+        } else {
+          spawnEnemy(randomChoice(lvl.pool));
         }
-      }
-
-      if (isWaveCleared()) {
-        state.waveSpawner.active = false;
-        setTimeout(() => {
-          if (state.phase === "playing") {
-            showPowerupScreen();
-          }
-        }, 1200);
+        state.waveSpawner.timer = lvl.interval;
       }
     }
 
@@ -1648,7 +1724,24 @@
     // =========================
     function updateHUD() {
       refs.scoreValue.textContent = pad(state.score, 4);
-      refs.waveValue.textContent = pad(state.wave, 2);
+      refs.waveValue.textContent = pad(state.level, 2);
+
+      if (refs.livesValue) {
+        const filled = "◆".repeat(Math.max(0, state.lives));
+        const empty = "◇".repeat(Math.max(0, 3 - state.lives));
+        refs.livesValue.textContent = filled + empty;
+        refs.livesValue.style.color = state.lives === 1 ? "#ff365a" : "var(--cyan)";
+      }
+
+      if (refs.killProgress) {
+        const lvl = LEVELS[state.level - 1];
+        if (lvl && state.phase !== "placement") {
+          refs.killProgress.textContent = `BAJAS ${pad(state.levelKills, 2)}/${pad(lvl.goal, 2)}`;
+          refs.killProgress.style.opacity = "1";
+        } else {
+          refs.killProgress.style.opacity = "0";
+        }
+      }
 
       const pct = clamp(Math.round((state.coreHp / state.coreMaxHp) * 100), 0, 100);
       refs.coreValue.textContent = `${pct}%`;
@@ -1684,19 +1777,15 @@
     }
 
     function triggerGameOver() {
-      if (state.phase === "gameover") {
-        return;
-      }
+      if (state.phase === "gameover") return;
       state.phase = "gameover";
       sfxGameOver();
-
       const prevBest = parseInt(localStorage.getItem("invasion_best") || "0", 10);
       const newBest = Math.max(prevBest, state.score);
       localStorage.setItem("invasion_best", String(newBest));
-
+      refs.goLevel.textContent = pad(state.level, 2);
       refs.goScore.textContent = pad(state.score, 4);
       refs.goBest.textContent = pad(newBest, 4);
-      refs.goWaves.textContent = pad(state.wave, 2);
       refs.goKills.textContent = pad(state.kills, 3);
       refs.gameOver.style.display = "flex";
     }
@@ -1718,29 +1807,26 @@
       state.phase = "playing";
       refs.placementHint.style.opacity = "0";
       refs.pauseBtn.style.display = "block";
-      state.wave = 0;
-      state.waveDelayTimer = 0;
-      startNextWave();
+      startLevel(1);
     }
 
     function resetCombatValues() {
+      state.level = 1;
+      state.lives = 3;
+      state.levelKills = 0;
+      state.nextBossAt = Infinity;
+      state.coreMaxHp = LEVELS[0].coreHp;
       state.coreHp = state.coreMaxHp;
       state.score = 0;
       state.kills = 0;
-      state.wave = 0;
       state.waveSpawner.active = false;
-      state.waveSpawner.toSpawn = 0;
-      state.waveSpawner.spawned = 0;
-      state.waveSpawner.interval = 1.4;
       state.waveSpawner.timer = 0;
-      state.waveDelayTimer = 0;
       state.enemies.length = 0;
       state.effects.length = 0;
       state.combo = 0;
       state.comboTimer = 0;
       state.shootCooldown = 220;
       state.comboTimeLimit = 2.2;
-      state.coreMaxHp = 100;
     }
 
     // =========================
@@ -1990,6 +2076,7 @@
       state.arenaPlaced = false;
       state.phase = "placement";
       refs.gameOver.style.display = "none";
+      refs.levelComplete.style.display = "none";
       refs.placementHint.style.opacity = "1";
       refs.motionBtn.style.display = 'none';
       refs.motionBtn.disabled = false;
@@ -2069,6 +2156,21 @@
 
       refs.restartBtn.addEventListener("click", onRestartPress, { passive: false });
       refs.restartBtn.addEventListener("touchend", onRestartPress, { passive: false });
+
+      const onNextLevelPress = (ev) => {
+        ev.preventDefault();
+        refs.levelComplete.style.display = "none";
+        if (state.level >= LEVELS.length) {
+          fullResetToPlacement();
+        } else {
+          refs.pauseBtn.style.display = "none";
+          state.phase = "playing";
+          showPowerupScreen();
+        }
+      };
+
+      refs.nextLevelBtn.addEventListener("click", onNextLevelPress, { passive: false });
+      refs.nextLevelBtn.addEventListener("touchend", onNextLevelPress, { passive: false });
 
       const onPausePress = (ev) => {
         ev.preventDefault();
