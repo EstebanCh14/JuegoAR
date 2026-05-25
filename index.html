@@ -615,6 +615,7 @@
 </head>
 <body>
   <video id="cameraVideo" autoplay muted playsinline></video>
+  <audio id="bgMusic" src="Vectorman_ Disco.mp3" loop preload="auto"></audio>
 
   <a-scene
     id="arScene"
@@ -871,7 +872,8 @@
       lcKills: document.getElementById("lcKills"),
       lcScore: document.getElementById("lcScore"),
       lcNextInfo: document.getElementById("lcNextInfo"),
-      nextLevelBtn: document.getElementById("nextLevelBtn")
+      nextLevelBtn: document.getElementById("nextLevelBtn"),
+      bgMusic: document.getElementById("bgMusic")
     };
 
     const runtime = {
@@ -938,6 +940,37 @@
       if (runtime.audio.ctx.state !== "running") {
         await runtime.audio.ctx.resume();
       }
+    }
+
+    function startBgMusic() {
+      const m = refs.bgMusic;
+      if (!m) return;
+      m.volume = 0;
+      m.currentTime = 0;
+      m.play().catch(function () {});
+      // Fade in suave en 2 segundos
+      let vol = 0;
+      const target = 0.35;
+      const step = target / 40;
+      const fade = setInterval(function () {
+        vol = Math.min(target, vol + step);
+        m.volume = vol;
+        if (vol >= target) clearInterval(fade);
+      }, 50);
+    }
+
+    function stopBgMusic() {
+      const m = refs.bgMusic;
+      if (!m) return;
+      // Fade out en 1 segundo
+      const step = m.volume / 20;
+      const fade = setInterval(function () {
+        m.volume = Math.max(0, m.volume - step);
+        if (m.volume <= 0) {
+          clearInterval(fade);
+          m.pause();
+        }
+      }, 50);
     }
 
     function playTone(type, f0, f1, duration, volume = 0.25, when = 0) {
@@ -1779,6 +1812,7 @@
     function triggerGameOver() {
       if (state.phase === "gameover") return;
       state.phase = "gameover";
+      stopBgMusic();
       sfxGameOver();
       const prevBest = parseInt(localStorage.getItem("invasion_best") || "0", 10);
       const newBest = Math.max(prevBest, state.score);
@@ -1805,6 +1839,7 @@
 
     function startPlayingPhase() {
       state.phase = "playing";
+      startBgMusic();
       refs.placementHint.style.opacity = "0";
       refs.pauseBtn.style.display = "block";
       startLevel(1);
@@ -2178,9 +2213,11 @@
         if (state.phase === "playing") {
           state.phase = "paused";
           refs.pauseBtn.innerHTML = "&#9654; RESUME";
+          refs.bgMusic && (refs.bgMusic.pause());
         } else if (state.phase === "paused") {
           state.phase = "playing";
           refs.pauseBtn.innerHTML = "&#9646;&#9646; PAUSE";
+          refs.bgMusic && refs.bgMusic.play().catch(function () {});
         }
       };
       refs.pauseBtn.addEventListener("click", onPausePress, { passive: false });
