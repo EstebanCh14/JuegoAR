@@ -634,7 +634,7 @@
 
     <div class="hud-top">
       <div class="hud-cell">
-        <div class="label">SCORE</div>
+        <div class="label">PUNTOS</div>
         <div class="value" id="scoreValue">0000</div>
       </div>
       <div class="hud-cell" style="text-align:center;">
@@ -674,7 +674,7 @@
     "></div>
 
     <div class="core-panel">
-      <div class="core-label">CORE INTEGRITY</div>
+      <div class="core-label">INTEGRIDAD DEL NUCLEO</div>
       <div class="core-bar-wrap">
         <div id="coreBar"></div>
       </div>
@@ -683,7 +683,7 @@
 
     <div class="status-line">
       <span class="dot"></span>
-      <span>SYS.ONLINE // AR.LINK ACTIVE</span>
+      <span>SIS.ACTIVO // ENLACE AR ACTIVO</span>
     </div>
 
     <div id="placementHint">APUNTA AL SUELO Y TOCA PARA COLOCAR EL NUCLEO</div>
@@ -694,7 +694,7 @@
       background:rgba(0,0,0,0.55); color:var(--cyan);
       font-family:'VT323',monospace; font-size:22px;
       padding:4px 18px; letter-spacing:2px; cursor:pointer;
-    ">&#9646;&#9646; PAUSE</button>
+    ">&#9646;&#9646; PAUSA</button>
     <div id="hitFlash"></div>
     <div id="damageFlash"></div>
   </div>
@@ -702,22 +702,22 @@
   <div id="startModal" class="screen-center">
     <div class="panel">
       <h1 class="title">INVASION</h1>
-      <div class="subtitle">// AR DEFENSE SYSTEM</div>
+      <div class="subtitle">// SISTEMA DE DEFENSA AR</div>
       <ul class="instructions">
         <li>Coloca el nucleo en una superficie</li>
         <li>Defiendelo de las oleadas</li>
         <li>Toca enemigos para disparar</li>
         <li>Muevete con el celular para mirar</li>
       </ul>
-      <button id="startBtn" class="btn">INITIATE</button>
-      <button id="motionBtn" class="btn" style="display:none; margin-top:10px; font-size:32px;">ENABLE MOTION</button>
-      <div class="hint">Requiere camara + giroscopio</div>
+      <button id="startBtn" class="btn">INICIAR</button>
+      <button id="motionBtn" class="btn" style="display:none; margin-top:10px; font-size:32px;">ACTIVAR MOVIMIENTO</button>
+      <div class="hint">Requiere cámara + giroscopio</div>
     </div>
   </div>
 
   <div id="powerupModal" class="screen-center">
     <div class="panel">
-      <div class="powerup-title">UPGRADE</div>
+      <div class="powerup-title">MEJORA</div>
       <div id="powerupCards" class="powerup-cards"></div>
     </div>
   </div>
@@ -726,7 +726,7 @@
     <div class="panel">
       <h2 class="title" style="color:#00f0ff; font-size:clamp(28px,8vw,52px);">NIVEL SUPERADO</h2>
       <div class="stats">BAJAS<span id="lcKills">000</span></div>
-      <div class="stats">SCORE<span id="lcScore">0000</span></div>
+      <div class="stats">PUNTOS<span id="lcScore">0000</span></div>
       <div id="lcNextInfo" class="subtitle" style="margin:10px 0; font-size:clamp(13px,3.5vw,18px);"></div>
       <button id="nextLevelBtn" class="btn">SIGUIENTE NIVEL</button>
     </div>
@@ -736,8 +736,8 @@
     <div class="panel">
       <h2 class="gameover-title">SISTEMA CAIDO</h2>
       <div class="stats">NIVEL<span id="goLevel">01</span></div>
-      <div class="stats">SCORE<span id="goScore">0000</span></div>
-      <div class="stats">BEST<span id="goBest">0000</span></div>
+      <div class="stats">PUNTOS<span id="goScore">0000</span></div>
+      <div class="stats">MEJOR<span id="goBest">0000</span></div>
       <div class="stats">BAJAS<span id="goKills">000</span></div>
       <button id="restartBtn" class="btn">REINTENTAR</button>
     </div>
@@ -1568,8 +1568,8 @@
       {
         id: "heal",
         icon: "+",
-        name: "REPAIR CORE",
-        desc: "+30 integrity",
+        name: "REPARAR NUCLEO",
+        desc: "+30 integridad",
         apply() {
           state.coreHp = Math.min(state.coreMaxHp, state.coreHp + 30);
           updateHUD();
@@ -1578,8 +1578,8 @@
       {
         id: "rapid",
         icon: ">>",
-        name: "RAPID FIRE",
-        desc: "Cooldown -40ms",
+        name: "FUEGO RAPIDO",
+        desc: "Recarga -40ms",
         apply() {
           state.shootCooldown = Math.max(60, state.shootCooldown - 40);
         }
@@ -1587,8 +1587,8 @@
       {
         id: "combo",
         icon: "x",
-        name: "COMBO BOOST",
-        desc: "Combo timer +1s",
+        name: "POTENCIA COMBO",
+        desc: "Tiempo combo +1s",
         apply() {
           state.comboTimeLimit += 1.0;
         }
@@ -1596,8 +1596,8 @@
       {
         id: "shield",
         icon: "[]",
-        name: "SHIELD BOOST",
-        desc: "+20 max integrity",
+        name: "ESCUDO REFORZADO",
+        desc: "+20 integridad max",
         apply() {
           state.coreMaxHp += 20;
           state.coreHp = Math.min(state.coreMaxHp, state.coreHp + 20);
@@ -2117,7 +2117,7 @@
       refs.motionBtn.disabled = false;
       refs.motionBtn.textContent = 'ENABLE MOTION';
       refs.startBtn.disabled = false;
-      refs.startBtn.textContent = 'INITIATE';
+      refs.startBtn.textContent = 'INICIAR';
       updateHUD();
     }
 
@@ -2148,7 +2148,7 @@
           showDiagMessage('camera', String(err));
           alert(`No se pudo iniciar: ${err.message || err}`);
           refs.startBtn.disabled = false;
-          refs.startBtn.textContent = 'INITIATE';
+          refs.startBtn.textContent = 'INICIAR';
         } finally {
           state.initInProgress = false;
         }
@@ -2212,11 +2212,11 @@
         ev.stopPropagation();
         if (state.phase === "playing") {
           state.phase = "paused";
-          refs.pauseBtn.innerHTML = "&#9654; RESUME";
+          refs.pauseBtn.innerHTML = "&#9654; CONTINUAR";
           refs.bgMusic && (refs.bgMusic.pause());
         } else if (state.phase === "paused") {
           state.phase = "playing";
-          refs.pauseBtn.innerHTML = "&#9646;&#9646; PAUSE";
+          refs.pauseBtn.innerHTML = "&#9646;&#9646; PAUSA";
           refs.bgMusic && refs.bgMusic.play().catch(function () {});
         }
       };
